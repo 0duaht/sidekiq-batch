@@ -177,11 +177,11 @@ module Sidekiq
         end
       end
 
-      def process_successful_job(bid, jid)
+      def can_enqueue_callbacks?(bid, jid, tries = 0)
         failed, pending, children, complete, success, total, parent_bid = Sidekiq.redis do |r|
           r.multi do
             r.scard("BID-#{bid}-failed")
-            r.hincrby("BID-#{bid}", "pending", -1)
+            r.hincrby("BID-#{bid}", "pending", tries == 0 ? -1 : 0)
             r.hincrby("BID-#{bid}", "children", 0)
             r.scard("BID-#{bid}-complete")
             r.scard("BID-#{bid}-success")
@@ -193,13 +193,25 @@ module Sidekiq
             r.expire("BID-#{bid}", BID_EXPIRE_TTL)
           end
         end
-
         all_success = pending.to_i.zero? && children == success
+
+        pending_num = pending.to_i
+        failed_num = failed.to_i
         # if complete or successfull call complete callback (the complete callback may then call successful)
-        if (pending.to_i == failed.to_i && children == complete) || all_success
-          enqueue_callbacks(:complete, bid)
-          enqueue_callbacks(:success, bid) if all_success
+        if ((pending_num < 0 || (pending_num == failed_num)) && children == complete) || all_success
+          return { all_success: all_success } if tries >= 2
+
+          sleep(0.2)
+          can_enqueue_callbacks?(bid, jid, tries + 1)
         end
+      end
+
+      def process_successful_job(bid, jid)
+        can_enqueue = can_enqueue_callbacks?(bid, jid)
+        return if can_enqueue.nil?
+
+        enqueue_callbacks(:complete, bid)
+        enqueue_callbacks(:success, bid) if can_enqueue[:all_success]
       end
 
       def enqueue_callbacks(event, bid)
