@@ -177,7 +177,7 @@ module Sidekiq
         end
       end
 
-      def can_enqueue_callbacks?(bid, jid, tries = 0)
+      def can_enqueue_callbacks?(bid, jid, tries = 1)
         failed, pending, children, complete, success, total, parent_bid = Sidekiq.redis do |r|
           r.multi do
             r.scard("BID-#{bid}-failed")
@@ -199,9 +199,9 @@ module Sidekiq
         failed_num = failed.to_i
         # if complete or successfull call complete callback (the complete callback may then call successful)
         if ((pending_num < 0 || (pending_num == failed_num)) && children == complete) || all_success
-          return { all_success: all_success } if tries >= 2
+          return { all_success: all_success } if tries >= 3
 
-          sleep(0.2)
+          sleep(0.5 * tries)
           can_enqueue_callbacks?(bid, jid, tries + 1)
         end
       end
