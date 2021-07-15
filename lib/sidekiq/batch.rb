@@ -202,7 +202,7 @@ module Sidekiq
         if ((pending_num < 0 || (pending_num == failed_num)) && children == complete) || all_success
           return { all_success: all_success } if tries >= 3
 
-          sleep(2 * tries)
+          sleep(0.5 * tries)
           can_enqueue_callbacks?(bid, jid, tries + 1)
         end
       end
