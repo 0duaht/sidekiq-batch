@@ -88,6 +88,7 @@ module Sidekiq
                 r.scard("BID-#{parent_bid}-failed")
               end
             end
+
             if complete == children && pending == failure
               Batch.enqueue_callbacks(:complete, parent_bid)
             end

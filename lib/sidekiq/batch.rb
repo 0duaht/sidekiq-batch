@@ -82,7 +82,7 @@ module Sidekiq
           Thread.current[:batch] = parent
         end
 
-        return [] if @ready_to_queue.size == 0
+        return [] if @ready_to_queue.length == 0
 
         Sidekiq.redis do |r|
           r.multi do
@@ -109,6 +109,10 @@ module Sidekiq
 
     def increment_job_queue(jid)
       @ready_to_queue << jid
+    end
+
+    def decrement_job_queue(jid)
+      @ready_to_queue.delete(jid)
     end
 
     def invalidate_all
@@ -146,7 +150,8 @@ module Sidekiq
     end
 
     class << self
-      def process_failed_job(bid, jid)
+      def process_failed_job(bid, jid, batch_size = 1)
+        batch_size ||= 1
         _, pending, failed, children, complete, parent_bid = Sidekiq.redis do |r|
           r.multi do
             r.sadd("BID-#{bid}-failed", jid)
@@ -165,7 +170,7 @@ module Sidekiq
         if parent_bid
           Sidekiq.redis do |r|
             r.multi do
-              r.hincrby("BID-#{parent_bid}", "pending", 1)
+              r.hincrby("BID-#{parent_bid}", "pending", batch_size)
               r.sadd("BID-#{parent_bid}-failed", jid)
               r.expire("BID-#{parent_bid}-failed", BID_EXPIRE_TTL)
             end
@@ -177,11 +182,11 @@ module Sidekiq
         end
       end
 
-      def can_enqueue_callbacks?(bid, jid, tries = 1)
+      def can_enqueue_callbacks?(bid, jid, batch_size)
         failed, pending, children, complete, success, total, parent_bid = Sidekiq.redis do |r|
           r.multi do
             r.scard("BID-#{bid}-failed")
-            r.hincrby("BID-#{bid}", "pending", tries == 1 ? -1 : 0)
+            r.hincrby("BID-#{bid}", "pending", -batch_size)
             r.hincrby("BID-#{bid}", "children", 0)
             r.scard("BID-#{bid}-complete")
             r.scard("BID-#{bid}-success")
@@ -193,6 +198,7 @@ module Sidekiq
             r.expire("BID-#{bid}", BID_EXPIRE_TTL)
           end
         end
+
         all_success = pending.to_i.zero? && children == success
 
         pending_num = pending.to_i
@@ -200,15 +206,12 @@ module Sidekiq
         # if complete or successfull call complete callback (the complete callback may then call successful)
 
         if ((pending_num < 0 || (pending_num == failed_num)) && children == complete) || all_success
-          return { all_success: all_success } if tries >= 3
-
-          sleep(0.5 * tries)
-          can_enqueue_callbacks?(bid, jid, tries + 1)
+          return { all_success: all_success }
         end
       end
 
-      def process_successful_job(bid, jid)
-        can_enqueue = can_enqueue_callbacks?(bid, jid)
+      def process_successful_job(bid, jid, batch_size = 1)
+        can_enqueue = can_enqueue_callbacks?(bid, jid, batch_size || 1)
         return if can_enqueue.nil?
 
         enqueue_callbacks(:complete, bid)
