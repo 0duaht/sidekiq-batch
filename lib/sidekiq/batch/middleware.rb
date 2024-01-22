@@ -19,9 +19,9 @@ module Sidekiq
               Thread.current[:batch] = Sidekiq::Batch.new(bid)
               yield
               Thread.current[:batch] = nil
-              Batch.process_successful_job(bid, msg['jid'])
+              Batch.process_successful_job(bid, msg['jid'], msg['batch_size'])
             rescue
-              Batch.process_failed_job(bid, msg['jid'])
+              Batch.process_failed_job(bid, msg['jid'], msg['batch_size'])
               raise
             ensure
               Thread.current[:batch] = nil

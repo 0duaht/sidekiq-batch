@@ -185,7 +185,7 @@ module Sidekiq
     end
 
     class << self
-      def process_failed_job(bid, jid)
+      def process_failed_job(bid, jid, batch_size = 1)
         _, pending, failed, children, complete, parent_bid = Sidekiq.redis do |r|
           r.multi do |pipeline|
             pipeline.sadd("BID-#{bid}-failed", [jid])
@@ -204,7 +204,7 @@ module Sidekiq
         if parent_bid
           Sidekiq.redis do |r|
             r.multi do |pipeline|
-              pipeline.hincrby("BID-#{parent_bid}", "pending", 1)
+              pipeline.hincrby("BID-#{parent_bid}", "pending", -batch_size)
               pipeline.sadd("BID-#{parent_bid}-failed", [jid])
               pipeline.expire("BID-#{parent_bid}-failed", BID_EXPIRE_TTL)
             end
@@ -216,11 +216,11 @@ module Sidekiq
         end
       end
 
-      def process_successful_job(bid, jid)
+      def process_successful_job(bid, jid, batch_size = 1)
         failed, pending, children, complete, success, total, parent_bid = Sidekiq.redis do |r|
           r.multi do |pipeline|
             pipeline.scard("BID-#{bid}-failed")
-            pipeline.hincrby("BID-#{bid}", "pending", -1)
+            pipeline.hincrby("BID-#{bid}", "pending", -batch_size)
             pipeline.hincrby("BID-#{bid}", "children", 0)
             pipeline.scard("BID-#{bid}-complete")
             pipeline.scard("BID-#{bid}-success")
