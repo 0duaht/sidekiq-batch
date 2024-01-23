@@ -120,6 +120,11 @@ module Sidekiq
       conditional_redis_increment!
     end
 
+    def decrement_job_queue(jid)
+      @queued_jids.delete(jid)
+      @pending_jids.delete(jid)
+    end
+
     def conditional_redis_increment!(force=false)
       if should_increment? || force
         parent_bid = Thread.current[:parent_bid]
