@@ -185,7 +185,8 @@ module Sidekiq
     end
 
     class << self
-      def process_failed_job(bid, jid, batch_size = 1)
+      def process_failed_job(bid, jid, batch_size = nil)
+        batch_size ||= 1
         _, pending, failed, children, complete, parent_bid = Sidekiq.redis do |r|
           r.multi do |pipeline|
             pipeline.sadd("BID-#{bid}-failed", [jid])
@@ -216,7 +217,8 @@ module Sidekiq
         end
       end
 
-      def process_successful_job(bid, jid, batch_size = 1)
+      def process_successful_job(bid, jid, batch_size = nil)
+        batch_size ||= 1
         failed, pending, children, complete, success, total, parent_bid = Sidekiq.redis do |r|
           r.multi do |pipeline|
             pipeline.scard("BID-#{bid}-failed")
